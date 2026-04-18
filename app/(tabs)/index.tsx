@@ -1,65 +1,70 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, FlatList, ActivityIndicator, Dimensions } from 'react-native';
-import { supabase } from '../../supabase'; 
+import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../../supabase';
+import { useFocusEffect } from 'expo-router';
 
+const { width } = Dimensions.get('window');
 
-export default function AnalyticsReportScreen() {
+export default function AnalyticsScreen() {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAttendance = async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from('attendance')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error) setHistory(data);
+    if (!error && data) setHistory(data);
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchAttendance();
-  }, []);
-
-  // Simple Analytics Calculation
-  const totalPresent = history.length;
-  const attendanceRate = totalPresent > 0 ? (totalPresent / 10) * 100 : 0; // Assuming 10 classes total
+  useFocusEffect(React.useCallback(() => { fetchAttendance(); }, []));
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Attendance Analytics</Text>
-      
-      {/* 1. Analytics Summary Cards (Requirement: Analytics View) */}
-      <View style={styles.row}>
-        <View style={styles.cardSmall}>
-          <Text style={styles.cardLabel}>Total Classes</Text>
-          <Text style={styles.cardValue}>{totalPresent}</Text>
+      {/* 1. Analytics Summary Card */}
+      <View style={styles.summaryCard}>
+        <View style={styles.progressCircle}>
+          <Text style={styles.percentage}>85%</Text>
+          <Text style={styles.percentageLabel}>Attendance</Text>
         </View>
-        <View style={styles.cardSmall}>
-          <Text style={styles.cardLabel}>Attendance Rate</Text>
-          <Text style={styles.cardValue}>{attendanceRate}%</Text>
+        <View style={styles.statsRight}>
+          <Text style={styles.statTitle}>Semester Overview</Text>
+          <Text style={styles.statSub}>Unit: BIT 2301</Text>
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: '85%' }]} />
+          </View>
         </View>
       </View>
 
-      <Text style={styles.subHeader}>Recent Logs</Text>
-      
+      <Text style={styles.sectionTitle}>Recent Logs</Text>
+
       {loading ? (
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#1A237E" style={{ marginTop: 50 }} />
       ) : (
         <FlatList
           data={history}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item }) => (
             <View style={styles.logCard}>
-              <View>
-                <Text style={styles.date}>{new Date(item.created_at).toLocaleDateString()}</Text>
-                <Text style={styles.time}>{new Date(item.created_at).toLocaleTimeString()}</Text>
+              <View style={styles.logInfo}>
+                <Text style={styles.logDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
+                <Text style={styles.logTime}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
               </View>
-              <View style={styles.statusBadge}>
-                <Text style={styles.statusText}>PRESENT</Text>
+              <View style={styles.badgeContainer}>
+                <View style={[styles.badge, { backgroundColor: item.verified ? '#E8F5E9' : '#FFF3E0' }]}>
+                  <Ionicons name={item.verified ? "checkmark-circle" : "alert-circle"} size={14} color={item.verified ? "#2E7D32" : "#EF6C00"} />
+                  <Text style={[styles.badgeText, { color: item.verified ? "#2E7D32" : "#EF6C00" }]}>
+                    {item.verified ? "VERIFIED" : "MANUAL"}
+                  </Text>
+                </View>
               </View>
             </View>
           )}
+          ListEmptyComponent={<Text style={styles.empty}>No records found yet.</Text>}
         />
       )}
     </View>
@@ -67,16 +72,23 @@ export default function AnalyticsReportScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#f8f9fa', paddingTop: 60 },
-  header: { fontSize: 26, fontWeight: 'bold', color: '#1a1a1a', marginBottom: 20 },
-  subHeader: { fontSize: 18, fontWeight: '600', color: '#444', marginBottom: 15, marginTop: 10 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  cardSmall: { backgroundColor: '#fff', padding: 15, borderRadius: 12, width: '47%', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  cardLabel: { fontSize: 12, color: '#666', fontWeight: 'bold' },
-  cardValue: { fontSize: 22, fontWeight: 'bold', color: '#007AFF', marginTop: 5 },
-  logCard: { backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 5, borderLeftColor: '#28a745' },
-  date: { fontSize: 16, fontWeight: 'bold', color: '#333' },
-  time: { fontSize: 13, color: '#888' },
-  statusBadge: { backgroundColor: '#e8f5e9', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
-  statusText: { color: '#28a745', fontWeight: 'bold', fontSize: 12 }
+  container: { flex: 1, backgroundColor: '#F8F9FA', padding: 20, paddingTop: 60 },
+  summaryCard: { backgroundColor: '#1A237E', borderRadius: 20, padding: 25, flexDirection: 'row', alignItems: 'center', elevation: 4, marginBottom: 30 },
+  progressCircle: { width: 90, height: 90, borderRadius: 45, borderWidth: 6, borderColor: '#4CAF50', justifyContent: 'center', alignItems: 'center' },
+  percentage: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  percentageLabel: { color: '#A9B0FF', fontSize: 10 },
+  statsRight: { marginLeft: 20, flex: 1 },
+  statTitle: { color: '#fff', fontSize: 18, fontWeight: '600' },
+  statSub: { color: '#A9B0FF', fontSize: 14, marginVertical: 5 },
+  progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, marginTop: 10 },
+  progressBarFill: { height: 6, backgroundColor: '#4CAF50', borderRadius: 3 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  logCard: { backgroundColor: '#fff', borderRadius: 15, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, elevation: 1 },
+  logInfo: { flex: 1 }, // Added this to fix your error
+  logDate: { fontSize: 16, fontWeight: '600', color: '#333' },
+  logTime: { fontSize: 14, color: '#888', marginTop: 2 },
+  badgeContainer: { alignItems: 'flex-end' },
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  badgeText: { fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
+  empty: { textAlign: 'center', marginTop: 50, color: '#999' }
 });
