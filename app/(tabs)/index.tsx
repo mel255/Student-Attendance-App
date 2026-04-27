@@ -1,94 +1,98 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, FlatList, ActivityIndicator, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../supabase';
-import { useFocusEffect } from 'expo-router';
+import { checkLocationStatus } from '@/src/useGeofence';
 
-const { width } = Dimensions.get('window');
-
-export default function AnalyticsScreen() {
-  const [history, setHistory] = useState<any[]>([]);
+export default function AttendanceScreen() {
+  const [session, setSession] = useState<any>(null);
+  const [locationStatus, setLocationStatus] = useState({ isInside: false, distance: 0 });
   const [loading, setLoading] = useState(true);
 
-  const fetchAttendance = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('*')
-      .order('created_at', { ascending: false });
+  useEffect(() => {
+    const init = async () => {
+      // 1. Fetch Active Session
+      const { data } = await supabase.from('sessions').select('*').eq('is_active', true).single();
+      if (data) {
+        setSession(data);
+        // 2. Initial Location Check
+        const status = await checkLocationStatus(data.lat, data.lon, data.radius_m);
+        setLocationStatus({ isInside: status.isInside, distance: status.currentDistance });
+      }
+      setLoading(false);
+    };
+    init();
+  }, []);
 
-    if (!error && data) setHistory(data);
-    setLoading(false);
+  const handleMarkPresent = async () => {
+    // Biometric Check [cite: 7, 15]
+    const auth = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity' });
+    if (!auth.success) return Alert.alert("Auth Failed");
+
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // Log Attendance [cite: 18]
+    const { error } = await supabase.from('attendance').insert([
+      { session_id: session.id, student_id: user?.id }
+    ]);
+
+    if (error) Alert.alert("Error", error.message);
+    else Alert.alert("Success", "Attendance marked successfully!");
   };
 
-  useFocusEffect(React.useCallback(() => { fetchAttendance(); }, []));
+  if (loading) return <ActivityIndicator style={{flex:1}} />;
 
   return (
-    <View style={styles.container}>
-      {/* 1. Analytics Summary Card */}
-      <View style={styles.summaryCard}>
-        <View style={styles.progressCircle}>
-          <Text style={styles.percentage}>85%</Text>
-          <Text style={styles.percentageLabel}>Attendance</Text>
-        </View>
-        <View style={styles.statsRight}>
-          <Text style={styles.statTitle}>Semester Overview</Text>
-          <Text style={styles.statSub}>Unit: BIT 2301</Text>
-          <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: '85%' }]} />
-          </View>
+    <View style={styles.screen}>
+      <Text style={styles.header}>Mark attendance</Text>
+      
+      <View style={styles.classCard}>
+        <Text style={styles.className}>{session?.course_code || 'No Active Class'}</Text>
+        <Text style={styles.classDetails}>Room {session?.room_name || 'N/A'}</Text>
+      </View>
+
+      {/* Mockup Match: Badge */}
+      <View style={[styles.badge, locationStatus.isInside ? styles.badgeGreen : styles.badgeRed]}>
+        <Text style={locationStatus.isInside ? styles.textGreen : styles.textRed}>
+          {locationStatus.isInside ? '● Inside classroom' : '○ Outside zone'}
+        </Text>
+      </View>
+
+      {/* Mockup Match: GPS Ring */}
+      <View style={[styles.gpsRingOuter, { borderColor: locationStatus.isInside ? '#1D9E75' : '#E24B4A' }]}>
+        <View style={styles.gpsRingInner}>
+          <Ionicons name="finger-print" size={40} color={locationStatus.isInside ? "#0F6E56" : "#A32D2D"} />
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Recent Logs</Text>
+      <Text style={styles.distLabel}>Verified · {locationStatus.distance}m from centre</Text>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#1A237E" style={{ marginTop: 50 }} />
-      ) : (
-        <FlatList
-          data={history}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.logCard}>
-              <View style={styles.logInfo}>
-                <Text style={styles.logDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
-                <Text style={styles.logTime}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-              </View>
-              <View style={styles.badgeContainer}>
-                <View style={[styles.badge, { backgroundColor: item.verified ? '#E8F5E9' : '#FFF3E0' }]}>
-                  <Ionicons name={item.verified ? "checkmark-circle" : "alert-circle"} size={14} color={item.verified ? "#2E7D32" : "#EF6C00"} />
-                  <Text style={[styles.badgeText, { color: item.verified ? "#2E7D32" : "#EF6C00" }]}>
-                    {item.verified ? "VERIFIED" : "MANUAL"}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
-          ListEmptyComponent={<Text style={styles.empty}>No records found yet.</Text>}
-        />
-      )}
+      <TouchableOpacity 
+        style={[styles.btnPrimary, { opacity: locationStatus.isInside ? 1 : 0.5 }]} 
+        onPress={handleMarkPresent}
+        disabled={!locationStatus.isInside}
+      >
+        <Text style={styles.btnText}>Mark present</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA', padding: 20, paddingTop: 60 },
-  summaryCard: { backgroundColor: '#1A237E', borderRadius: 20, padding: 25, flexDirection: 'row', alignItems: 'center', elevation: 4, marginBottom: 30 },
-  progressCircle: { width: 90, height: 90, borderRadius: 45, borderWidth: 6, borderColor: '#4CAF50', justifyContent: 'center', alignItems: 'center' },
-  percentage: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  percentageLabel: { color: '#A9B0FF', fontSize: 10 },
-  statsRight: { marginLeft: 20, flex: 1 },
-  statTitle: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  statSub: { color: '#A9B0FF', fontSize: 14, marginVertical: 5 },
-  progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, marginTop: 10 },
-  progressBarFill: { height: 6, backgroundColor: '#4CAF50', borderRadius: 3 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
-  logCard: { backgroundColor: '#fff', borderRadius: 15, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, elevation: 1 },
-  logInfo: { flex: 1 }, // Added this to fix your error
-  logDate: { fontSize: 16, fontWeight: '600', color: '#333' },
-  logTime: { fontSize: 14, color: '#888', marginTop: 2 },
-  badgeContainer: { alignItems: 'flex-end' },
-  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  badgeText: { fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
-  empty: { textAlign: 'center', marginTop: 50, color: '#999' }
+  screen: { flex: 1, padding: 25, backgroundColor: '#fff', alignItems: 'center' },
+  header: { fontSize: 18, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 15 },
+  classCard: { backgroundColor: '#F8F9FA', width: '100%', padding: 15, borderRadius: 12, marginBottom: 15 },
+  className: { fontWeight: 'bold', fontSize: 16 },
+  classDetails: { color: '#666', fontSize: 12 },
+  badge: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, marginBottom: 20 },
+  badgeGreen: { backgroundColor: '#E1F5EE' },
+  badgeRed: { backgroundColor: '#FCEBEB' },
+  textGreen: { color: '#085041', fontWeight: 'bold' },
+  textRed: { color: '#A32D2D', fontWeight: 'bold' },
+  gpsRingOuter: { width: 120, height: 120, borderRadius: 60, borderWidth: 3, borderStyle: 'solid', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  gpsRingInner: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#F0F0F0', justifyContent: 'center', alignItems: 'center' },
+  distLabel: { fontSize: 12, color: '#999', marginBottom: 30 },
+  btnPrimary: { backgroundColor: '#185FA5', width: '100%', padding: 15, borderRadius: 10, alignItems: 'center' },
+  btnText: { color: '#fff', fontWeight: 'bold' }
 });
